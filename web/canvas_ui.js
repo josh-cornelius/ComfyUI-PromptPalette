@@ -1,6 +1,5 @@
 import { Line } from "./line.js";
 import {
-  calculateNodeHeight,
   findDelimiterWidget,
   findLineBreakWidget,
   findTextWidget,
@@ -24,6 +23,12 @@ const CONFIG = {
   weightLabelMarginRight: 2,
   weightButtonSize: 16,
   weightButtonGap: 4,
+  // Scrolling
+  bottomPadding: 6,
+  fallbackBottomPadding: 46,
+  scrollbarWidth: 6,
+  scrollbarMargin: 2,
+  scrollbarMinThumb: 24,
 };
 
 let colorCache = null;
@@ -94,6 +99,10 @@ class PromptPaletteCanvasUI {
   #mode;
   #clickableAreas;
   #toggleButton;
+  #scrollY;
+  #maxScrollY;
+  #scrollbarThumb;
+  #wheelHandler;
 
   constructor(node, textWidget, app) {
     this.#node = node;
@@ -104,12 +113,17 @@ class PromptPaletteCanvasUI {
     this.#mode = PromptPaletteCanvasUI.MODE.DISPLAY;
     this.#clickableAreas = [];
     this.#toggleButton = null;
+    this.#scrollY = 0;
+    this.#maxScrollY = 0;
+    this.#scrollbarThumb = null;
+    this.#wheelHandler = null;
 
     hideWidgetAndKeepSpace(this.#textWidget);
     hideWidget(this.#delimiterWidget);
     hideWidget(this.#lineBreakWidget);
     this.#addToggleButton();
     this.#attachClickHandler();
+    this.#attachWheelHandler();
   }
 
   draw(ctx) {
@@ -177,7 +191,7 @@ class PromptPaletteCanvasUI {
   #attachClickHandler() {
     const self = this;
     this.#node.onMouseDown = function (e, pos) {
-      self.#handleMouseDown(pos);
+      return self.#handleMouseDown(pos);
     };
   }
 
@@ -185,10 +199,127 @@ class PromptPaletteCanvasUI {
     if (this.#mode === PromptPaletteCanvasUI.MODE.EDIT) {
       return;
     }
+    // Return true so LiteGraph doesn't start dragging the node while
+    // the scrollbar is being manipulated.
+    if (this.#startScrollbarDragIfHit(pos)) {
+      return true;
+    }
     const clickedArea = this.#findClickedArea(pos);
     if (clickedArea) {
       this.#handleClickableAreaAction(clickedArea);
     }
+  }
+
+  // ========================================
+  // Scroll Handling
+  // ========================================
+  #attachWheelHandler() {
+    const canvasEl = this.#app.canvas?.canvas;
+    if (!canvasEl) return;
+
+    this.#wheelHandler = (e) => this.#handleWheel(e);
+    // Capture phase so we can pre-empt the canvas zoom handler when the
+    // cursor is over a scrollable node.
+    canvasEl.addEventListener("wheel", this.#wheelHandler, {
+      passive: false,
+      capture: true,
+    });
+
+    // Remove the listener when the node is deleted to avoid leaks.
+    const self = this;
+    const origOnRemoved = this.#node.onRemoved;
+    this.#node.onRemoved = function () {
+      canvasEl.removeEventListener("wheel", self.#wheelHandler, {
+        capture: true,
+      });
+      if (origOnRemoved) {
+        return origOnRemoved.apply(this, arguments);
+      }
+    };
+  }
+
+  #handleWheel(e) {
+    if (this.#mode !== PromptPaletteCanvasUI.MODE.DISPLAY) return;
+    if (this.#node.flags && this.#node.flags.collapsed) return;
+    if (this.#maxScrollY <= 0) return;
+    if (!this.#isMouseOverNode()) return;
+
+    this.#scrollY = clamp(this.#scrollY + e.deltaY, 0, this.#maxScrollY);
+    this.#app.graph.setDirtyCanvas(true);
+    // Scroll the list instead of zooming the canvas.
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+
+  #isMouseOverNode() {
+    const canvas = this.#app.canvas;
+    if (!canvas) return false;
+    const mouse = canvas.graph_mouse || canvas.canvas_mouse;
+    if (!mouse) return false;
+    if (typeof this.#node.isPointInside === "function") {
+      return this.#node.isPointInside(mouse[0], mouse[1]);
+    }
+    // Fallback: manual bounds check in graph coordinates.
+    const [nx, ny] = this.#node.pos;
+    const [nw, nh] = this.#node.size;
+    return (
+      mouse[0] >= nx &&
+      mouse[0] <= nx + nw &&
+      mouse[1] >= ny &&
+      mouse[1] <= ny + nh
+    );
+  }
+
+  #startScrollbarDragIfHit(pos) {
+    const thumb = this.#scrollbarThumb;
+    if (!thumb || this.#maxScrollY <= 0) return false;
+
+    const [x, y] = pos;
+    const withinX = x >= thumb.x - 2 && x <= thumb.x + thumb.w + 2;
+    const withinTrack = y >= thumb.trackY && y <= thumb.trackY + thumb.trackH;
+    if (!withinX || !withinTrack) return false;
+
+    const onThumb = y >= thumb.y && y <= thumb.y + thumb.h;
+    if (!onThumb) {
+      // Clicking the track jumps the thumb to the cursor before dragging.
+      this.#setScrollFromThumbTop(y - thumb.h / 2, thumb);
+    }
+    this.#beginScrollbarDrag(thumb);
+    return true;
+  }
+
+  #beginScrollbarDrag(thumb) {
+    const scale = this.#app.canvas?.ds?.scale || 1;
+    const startThumbTop = this.#thumbTopFromScroll(thumb);
+    let startClientY = null;
+
+    const onMove = (e) => {
+      if (startClientY === null) startClientY = e.clientY;
+      const deltaGraph = (e.clientY - startClientY) / scale;
+      this.#setScrollFromThumbTop(startThumbTop + deltaGraph, thumb);
+      this.#app.graph.setDirtyCanvas(true);
+      e.preventDefault();
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove, true);
+      document.removeEventListener("mouseup", onUp, true);
+    };
+    document.addEventListener("mousemove", onMove, true);
+    document.addEventListener("mouseup", onUp, true);
+  }
+
+  #thumbTopFromScroll(thumb) {
+    if (this.#maxScrollY <= 0) return thumb.trackY;
+    return (
+      thumb.trackY +
+      (this.#scrollY / this.#maxScrollY) * (thumb.trackH - thumb.h)
+    );
+  }
+
+  #setScrollFromThumbTop(thumbTop, thumb) {
+    const range = thumb.trackH - thumb.h;
+    const ratio = range > 0 ? (thumbTop - thumb.trackY) / range : 0;
+    this.#scrollY = clamp(ratio * this.#maxScrollY, 0, this.#maxScrollY);
   }
 
   #findClickedArea(pos) {
@@ -245,18 +376,19 @@ class PromptPaletteCanvasUI {
       return;
     }
 
-    const text = this.#textWidget.value || "";
-    const lines = text.split("\n");
-    const textHeight = calculateNodeHeight(lines.length, CONFIG);
-
-    if (this.#node.size[1] < textHeight) {
-      this.#node.size[1] = textHeight;
+    // Keep the node at least at the minimum height, but never auto-grow to
+    // fit the content: the list scrolls within the node's fixed height.
+    if (this.#node.size[1] < CONFIG.minNodeHeight) {
+      this.#node.size[1] = CONFIG.minNodeHeight;
       this.#app.graph.setDirtyCanvas(true);
     }
 
+    const text = this.#textWidget.value || "";
     if (text.trim() !== "") {
-      this.#drawCheckboxItems(ctx, lines);
+      this.#drawCheckboxItems(ctx, text.split("\n"));
     } else {
+      this.#maxScrollY = 0;
+      this.#scrollbarThumb = null;
       this.#drawEmptyMessage(ctx);
     }
   }
@@ -271,16 +403,77 @@ class PromptPaletteCanvasUI {
   #drawCheckboxItems(ctx, lines) {
     this.#clickableAreas = [];
 
+    const viewportTop = CONFIG.topNodePadding;
+    const viewportBottom = this.#getViewportBottom();
+    const viewportHeight = Math.max(0, viewportBottom - viewportTop);
+    const contentHeight = lines.length * CONFIG.lineHeight;
+
+    this.#maxScrollY = Math.max(0, contentHeight - viewportHeight);
+    this.#scrollY = clamp(this.#scrollY, 0, this.#maxScrollY);
+
+    // Clip rows to the viewport so scrolled content doesn't overlap the
+    // header or the Edit button.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, viewportTop, this.#node.size[0], viewportHeight);
+    ctx.clip();
+
     lines.forEach((lineText, index) => {
       const line = new Line(lineText);
       if (!line.hasPhraseText()) return;
 
-      const y = CONFIG.topNodePadding + index * CONFIG.lineHeight;
+      const y = viewportTop + index * CONFIG.lineHeight - this.#scrollY;
+      // Skip rows entirely outside the visible viewport.
+      if (y + CONFIG.lineHeight <= viewportTop || y >= viewportBottom) return;
 
       this.#drawCheckbox(ctx, line, y, index);
       this.#drawDisplayText(ctx, line, y);
       this.#drawWeightControls(ctx, line, y, index);
     });
+
+    ctx.restore();
+
+    this.#drawScrollbar(ctx, viewportTop, viewportHeight, contentHeight);
+  }
+
+  #getViewportBottom() {
+    // Prefer the actual Edit button position so the list never overlaps it.
+    const buttonY = this.#toggleButton?.last_y;
+    if (typeof buttonY === "number" && buttonY > CONFIG.topNodePadding) {
+      return buttonY - CONFIG.bottomPadding;
+    }
+    return this.#node.size[1] - CONFIG.fallbackBottomPadding;
+  }
+
+  #drawScrollbar(ctx, viewportTop, viewportHeight, contentHeight) {
+    this.#scrollbarThumb = null;
+    if (this.#maxScrollY <= 0 || viewportHeight <= 0) return;
+
+    const width = CONFIG.scrollbarWidth;
+    const x = this.#node.size[0] - width - CONFIG.scrollbarMargin;
+    const trackY = viewportTop;
+    const trackH = viewportHeight;
+    const radius = width / 2;
+
+    const thumbH = Math.max(
+      CONFIG.scrollbarMinThumb,
+      (viewportHeight / contentHeight) * trackH,
+    );
+    const thumbY =
+      trackY + (this.#scrollY / this.#maxScrollY) * (trackH - thumbH);
+
+    const colors = getColors();
+    ctx.fillStyle = colors.scrollbarTrackColor;
+    ctx.beginPath();
+    ctx.roundRect(x, trackY, width, trackH, radius);
+    ctx.fill();
+
+    ctx.fillStyle = colors.scrollbarThumbColor;
+    ctx.beginPath();
+    ctx.roundRect(x, thumbY, width, thumbH, radius);
+    ctx.fill();
+
+    this.#scrollbarThumb = { x, y: thumbY, w: width, h: thumbH, trackY, trackH };
   }
 
   #drawCheckbox(ctx, line, y, index) {
@@ -468,8 +661,14 @@ function getColors() {
     checkboxSymbolColor: themeColors.comfyInputBg,
     weightButtonFillColor: themeColors.comfyInputBg,
     weightButtonSymbolColor: themeColors.inputText + "99",
+    scrollbarTrackColor: themeColors.inputText + "22",
+    scrollbarThumbColor: themeColors.inputText + "66",
   };
   return colorCache;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function getComfyUIThemeColors() {
