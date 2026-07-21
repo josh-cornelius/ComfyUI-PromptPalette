@@ -1,264 +1,284 @@
 # ComfyUI PromptPalette
 
-## プロジェクト概要
+## Project Overview
 
-ComfyUI-PromptPaletteは、マウス操作で素早いプロンプト編集を可能にするComfyUI向けのカスタムノードです。
-チェックボックスによるフレーズの有効/無効切り替えや、ウェイト調整ボタンといった、インタラクティブなプロンプト編集機能を提供します。
+ComfyUI-PromptPalette is a custom node for ComfyUI that enables fast prompt editing with mouse operations.
+It provides interactive prompt editing features such as enabling/disabling phrases via checkboxes and weight adjustment buttons.
 
-## 使用言語
+## Fork & Maintenance Scope
+
+- This repository is a fork of the original ComfyUI-PromptPalette.
+- Active development targets the **Nodes 1.0 Canvas UI only** (`web/canvas_ui.js`).
+- The Nodes 2.0 DOM UI (`web/dom_ui.js`) remains in the repository but is not actively maintained. Do not add new features to it unless explicitly requested.
+
+## Languages
 
 - Python
 - JavaScript
 
-## コーディング規約
+## Coding Conventions
 
-- コードコメントは英語
-- ログ出力は英語
+- Code comments in English
+- Log output in English
 
-## コミット規約
+## Commit Conventions
 
-- コミットメッセージは英語
+- Commit messages in English
 
-## インストール方法
+## Installation
 
-- 標準的な ComfyUI カスタムノードの導入手順に従い、`custom_nodes` ディレクトリへ配置する。
-- 追加のセットアップや依存関係は不要。
+- Follow the standard ComfyUI custom node installation procedure: place this folder in the `custom_nodes` directory.
+- No additional setup or dependencies required.
 
-## ビルド
+## Build
 
-- 不要
+- Not required
 
-## プロジェクト構成
+## Project Structure
 
-ComfyUIのカスタムノード構成に従う。
+Follows the standard ComfyUI custom node layout.
 
-- `__init__.py`: ノードのマッピングと Web ディレクトリをインポート/エクスポートするエントリポイント
-- `nodes.py`: テキスト入力を処理するバックエンド（Python）
+- `__init__.py`: Entry point that imports/exports the node mappings and web directory
+- `nodes.py`: Backend that processes the text input (Python)
 - `web/`
-  - `index.js`: フロントエンドのエントリポイント（JavaScript）
-  - `canvas_ui.js`: Nodes 1.0用のフロントエンド（Canvas描画）
-  - `dom_ui.js`: Nodes 2.0用のフロントエンド（DOM描画）
-  - `ui_utils.js`: UI関連の共通ロジック
-  - `line.js`: 各行のテキスト処理の共通ロジック
-- `pyproject.toml`: Comfy Registry 公開のためのメタデータ
+  - `index.js`: Frontend entry point (JavaScript)
+  - `canvas_ui.js`: Frontend for Nodes 1.0 (Canvas rendering) — **primary UI**
+  - `dom_ui.js`: Frontend for Nodes 2.0 (DOM rendering) — not actively maintained
+  - `ui_utils.js`: Shared UI logic
+  - `line.js`: Shared per-line text processing logic
+  - `text_lines.js`: Line-array operations over the text widget value
+- `pyproject.toml`: Metadata for Comfy Registry publishing
 
-## 機能
+## Features
 
-### ノードの入力スロット
+### Node Input Slots
 
 - `prefix` slot (Optional)
   - type: Multiline STRING
 
-### ノードのウィジェット
+### Node Widgets
 
-- `text` widget: メインテキストエリア
-  - type: Multiline STRING 
+- `text` widget: main text area
+  - type: Multiline STRING
   - default: ""
-- `delimiter` widget: 区切り文字の設定
+- `delimiter` widget: delimiter setting
   - type: COMBO
   - options:
     - "comma"
     - "space"
     - "none"
   - default: "comma"
-- `line_break` widget: 改行有無の設定
+- `line_break` widget: line break setting
   - type: BOOLEAN
   - default: true
 
-### ノードの出力
+### Node Output
 
-メインテキストエリアのテキストを以下の通り整形した文字列を出力する。
+Outputs the main text area content formatted as follows:
 
-- 空行を削除
-- コメントを削除
-  - `//` で始まるコメント行を削除
-  - 行内の `//` 以降の文字列は後続コメントとして削除
-- `delimiter` の設定に応じて行の末尾に文字列を追加
-  - "comma": ", " を追加
-  - "space": " " を追加
-  - "none": 何も追加しない
-- `line_break` の設定に応じて出力文字列の改行を変更
-  - true: 改行をキープ
-  - false: 改行を削除
-- `prefix` slot の入力がある場合、prefixを出力文字列の先頭に追加
-  - `line_break` の設定に応じて結合時の改行有無を変更
-    - true: 改行ありで結合
-    - false: 改行なしで結合
-  - 出力文字列が空の場合は結合せずprefixを出力文字列とする
+- Remove empty lines
+- Remove comments
+  - Remove comment lines starting with `//`
+  - Remove text after `//` within a line (trailing comment)
+- Append a string to the end of each line according to the `delimiter` setting
+  - "comma": append ", "
+  - "space": append " "
+  - "none": append nothing
+- Adjust line breaks in the output according to the `line_break` setting
+  - true: keep line breaks
+  - false: remove line breaks
+- If the `prefix` slot has input, prepend the prefix to the output string
+  - Join with or without a line break according to the `line_break` setting
+    - true: join with a line break
+    - false: join without a line break
+  - If the output string is empty, use the prefix alone as the output
 
-### 編集モードと表示モード
+### Edit Mode and Display Mode
 
-- 編集モード (Edit mode) と表示モード (Display mode) という2種類のモードがある
-- ノード下部の `Edit` / `Save` ボタンで編集モードと表示モードをトグル
-- デフォルトは表示モード
+- There are two modes: Edit mode and Display mode
+- The `Edit` / `Save` button at the bottom of the node toggles between them
+- Default is Display mode
 
-### 編集モード時のUI
+### Edit Mode UI
 
-- 以下の要素を上から順に並べる
+- Arrange the following elements from top to bottom:
   - `text` widget
   - `delimiter` widget
   - `line_break` widget
-  - `Save` ボタン
-- レイアウト
-  - `delimiter`, `line_break`, `Save` をノード下端に寄せる
-  - 残りの上部領域に `text` widgetを表示
+  - `Save` button
+- Layout
+  - Align `delimiter`, `line_break`, and `Save` to the bottom of the node
+  - The `text` widget fills the remaining upper area
 
-### 表示モード時のUI
+### Display Mode UI
 
-- Nodes 1.0の場合、Canvasで UI を描画
-  - クリック処理は座標ベースの `clickableAreas` により判定
-- Nodes 2.0の場合、DOMでUIを描画
-- 表示モードでは以下のウィジェットは非表示
-  - `text` widget (メインテキストエリア) 
+- For Nodes 1.0, the UI is rendered on the Canvas
+  - Clicks are resolved via coordinate-based `clickableAreas`
+- For Nodes 2.0, the UI is rendered with DOM elements
+- The following widgets are hidden in Display mode:
+  - `text` widget (main text area)
   - `delimiter` widget
   - `line_break` widget
-- メインテキストエリアにテキストが書かれている場合:
-  - メインテキストエリアの各行のテキストを元に、後述する「表示モード行」を表示
-  - ノード下部に `Edit` ボタンを下寄せして表示
-- メインテキストエリアが空の場合:
-  - ノードの中央に "No Text" と表示
-  - ノード下部に `Edit` ボタンを下寄せして表示
-- ノードが折りたたまれている場合:
-  - 何も描画しない
+- When the main text area contains text:
+  - Render a "display row" (described below) for each line of the main text area
+  - Show the `Edit` button aligned to the bottom of the node
+  - Show the bulk action buttons (`All` / `None` / `Sort`) in a horizontal row above the `Edit` button
+- When the main text area is empty:
+  - Show "No Text" in the center of the node
+  - Show the `Edit` button aligned to the bottom of the node
+- When the node is collapsed:
+  - Render nothing
 
-#### 用語定義
+#### Terminology
 
-- `表示用テキスト`: 各行のテキストから、行頭コメントプレフィックスおよびウェイト値、ウェイトの括弧、ウェイトのコロンを除去したテキストを表示用テキストとする。後続コメントは表示用テキストに含まれる。
-- `フレーズテキスト`: 各行のテキストから、行頭コメントプレフィックスおよび後続コメント、ウェイト値、ウェイトの括弧、ウェイトのコロンを除去したテキストをフレーズテキストとする。
+- `display text`: the text of a line with the leading comment prefix, weight value, weight parentheses, and weight colon removed. Trailing comments are included in the display text.
+- `phrase text`: the text of a line with the leading comment prefix, trailing comment, weight value, weight parentheses, and weight colon removed.
 
-#### 表示モード行
+#### Display Rows
 
-- 行ごとに「チェックボックス」「表示用テキスト」「ウェイト値」「-ボタン」「+ボタン」を描画
-  - 「チェックボックス」「表示用テキスト」は左寄せ
-  - 「ウェイト値」「-ボタン」「+ボタン」は右寄せ
-- フレーズテキストが空文字や空白文字になる場合、その行は空行として表示する。
-  - 例えば行頭コメントプレフィックスのみの行や、行頭コメントプレフィックスと後続コメントのみの行などがこれに該当
+- For each line, render a checkbox, the display text, the weight value, a `-` button, and a `+` button
+  - Checkbox and display text are left-aligned
+  - Weight value, `-` button, and `+` button are right-aligned
+- If the phrase text is empty or whitespace-only, render the line as an empty row
+  - e.g. lines containing only a leading comment prefix, or only a leading comment prefix and a trailing comment
 
-#### チェックボックスによる行頭コメントの切り替え
+#### Toggling Leading Comments via Checkbox
 
-- チェックボックスがオフの場合、その行に行頭コメント `//` を付ける
-- チェックボックスがオンの場合、その行の行頭コメントを削除する
+- When the checkbox is unchecked, add a leading comment `//` to the line
+- When the checkbox is checked, remove the leading comment from the line
 
-#### 表示用テキスト
+#### Bulk Action Buttons
 
-- 表示用テキストがウェイト値や±ボタンと重なる場合、重なる部分を省略表記する
-  - Nodes 1.0 (Canvas) の場合: Canvasの `clip()` を使用し、表示用テキストをクリッピング
-  - Nodes 2.0 (DOM) の場合: 三点リーダー `text-overflow: ellipsis` で省略表記
-- ウェイトが 1.0 以外の場合、表示用テキストを太字にする
+- Show three buttons — `All` / `None` / `Sort` — in a horizontal row above the `Edit` button
+- Hidden when the main text area is empty
+- `All`: remove the leading comment from every line that has phrase text (check all)
+- `None`: add a leading comment to every line that has phrase text (uncheck all)
+- `All` / `None` do not reformat lines whose state does not change
+- `Sort`: sort lines alphabetically by phrase text (case-insensitive)
+  - Checked lines are grouped above unchecked lines
+  - Lines without phrase text (empty lines, comment-only lines) move to the end, keeping their original relative order
 
-#### ウェイト値
+#### Display Text
 
-- `(phrase:1.5)` のようなウェイト表記を解析し、ウェイト値を表示
-- ウェイトが 1.0 の場合はウェイト値を非表示
-- ウェイト値は小数第一位まで必ず表示
-  - 小数第二位がある場合は小数第二位も表示
-  - 小数第三位以降は四捨五入
+- If the display text would overlap the weight value or ± buttons, truncate the overlapping part
+  - Nodes 1.0 (Canvas): clip the display text using Canvas `clip()`
+  - Nodes 2.0 (DOM): truncate with an ellipsis via `text-overflow: ellipsis`
+- If the weight is not 1.0, render the display text in bold
 
-#### ウェイト値調整用の-ボタンと+ボタン
+#### Weight Value
 
-- ± ボタンで 0.1 刻みの増減
-- ウェイトの範囲は 0.1-2.0
-- 手入力で範囲外の値（例: 2.5）が設定されている場合:
-  - 表示: そのままの値を表示
-  - ± ボタン押下後: 範囲内にクランプ
-- ウェイトの値を1.0に戻すと、ウェイトの括弧やウェイト値を外す
-- 行頭コメント行や後続コメント付き行でも増減可能
-  - ウェイト変更後も行頭コメント行や後続コメントを残す
+- Parse weight notation such as `(phrase:1.5)` and show the weight value
+- Hide the weight value when the weight is 1.0
+- Always show at least one decimal place
+  - Show a second decimal place if present
+  - Round off the third decimal place and beyond
 
-### ComfyUIテーマ連携
+#### Weight Adjustment `-` and `+` Buttons
 
-- 文字色やボタン色、チェックボックス色をComfyUIテーマ色に合わせる
-  - ライト/ダーク両テーマに対応
-- ComfyUI のCSS変数から色を取得
-  - パフォーマンスのため色情報はキャッシュ
-  - 3桁の16進カラーの場合、6桁の16進カラーに変換して使用
+- The ± buttons adjust the weight in 0.1 steps
+- The weight range is 0.1–2.0
+- If a value outside the range (e.g. 2.5) was entered by hand:
+  - Display: show the value as-is
+  - After pressing a ± button: clamp into the range
+- When the weight returns to 1.0, remove the weight parentheses and value
+- Weights can be adjusted on commented-out lines and lines with trailing comments
+  - Leading comments and trailing comments are preserved after a weight change
 
-#### Nodes 1.0 (Canvas) の場合の配色
+### ComfyUI Theme Integration
 
-チェックボックスがオン状態:
-- チェックボックスの枠線: --input-text
-- チェックボックスの塗り: --input-text
-- チェックボックスのチェック: --comfy-input-bg
-- 表示用テキスト: --input-text
+- Match text, button, and checkbox colors to the ComfyUI theme
+  - Supports both light and dark themes
+- Read colors from ComfyUI CSS variables
+  - Cache color values for performance
+  - Expand 3-digit hex colors to 6-digit hex before use
 
-チェックボックスがオフ状態:
-- チェックボックスの枠線: --input-text (透明度: 0.5)
-- チェックボックスの塗り: なし
-- 表示用テキスト: --input-text (透明度: 0.4)
+#### Colors for Nodes 1.0 (Canvas)
 
-その他:
-- ウェイトボタンの塗り: --comfy-input-bg
-- ウェイトボタンの+と-: --input-text (透明度: 0.6)
-- "No Text" の文字: --input-text (透明度: 0.6)
+Checkbox checked:
+- Checkbox border: --input-text
+- Checkbox fill: --input-text
+- Checkbox check mark: --comfy-input-bg
+- Display text: --input-text
 
-#### Nodes 2.0 (DOM) の場合の配色
+Checkbox unchecked:
+- Checkbox border: --input-text (opacity: 0.5)
+- Checkbox fill: none
+- Display text: --input-text (opacity: 0.4)
 
-チェックボックスがオン状態:
-- チェックボックスの枠線: --text-primary
-- チェックボックスの塗り: --text-primary
-- チェックボックスのチェック: --component-node-widget-background
-- 表示用テキスト: --text-primary
+Other:
+- Weight button fill: --comfy-input-bg
+- Weight button + and -: --input-text (opacity: 0.6)
+- "No Text" label: --input-text (opacity: 0.6)
 
-チェックボックスがオフ状態:
-- チェックボックスの枠線: --text-primary (透明度: 0.5)
-- チェックボックスの塗り: なし
-- 表示用テキスト: --text-primary (透明度: 0.4)
+#### Colors for Nodes 2.0 (DOM)
 
-その他:
-- ウェイトボタンの塗り: --component-node-widget-background
-- ウェイトボタンの塗り (ホバー時): --component-node-widget-background-hovered
-- ウェイトボタンの+と-: --text-primary (透明度: 0.6)
-- トグルボタンの文字: --text-primary (透明度: 0.6)
-- トグルボタンの塗り: --component-node-widget-background
-- トグルボタンの塗り (ホバー時): --component-node-widget-background-hovered
-- "No Text" の文字: --text-primary (透明度: 0.6)
+Checkbox checked:
+- Checkbox border: --text-primary
+- Checkbox fill: --text-primary
+- Checkbox check mark: --component-node-widget-background
+- Display text: --text-primary
 
-### 拡張登録
+Checkbox unchecked:
+- Checkbox border: --text-primary (opacity: 0.5)
+- Checkbox fill: none
+- Display text: --text-primary (opacity: 0.4)
 
-- ComfyUI 拡張として登録し、PromptPalette ノードの生成/描画にフック
-- `beforeRegisterNodeDef` で PromptPalette ノードの挙動を差し替え
+Other:
+- Weight button fill: --component-node-widget-background
+- Weight button fill (hover): --component-node-widget-background-hovered
+- Weight button + and -: --text-primary (opacity: 0.6)
+- Toggle button text: --text-primary (opacity: 0.6)
+- Toggle button fill: --component-node-widget-background
+- Toggle button fill (hover): --component-node-widget-background-hovered
+- "No Text" label: --text-primary (opacity: 0.6)
 
-## その他の実装方針
+### Extension Registration
 
-- UI の定数は `CONFIG` オブジェクトで定義
+- Register as a ComfyUI extension and hook into PromptPalette node creation/rendering
+- Override PromptPalette node behavior in `beforeRegisterNodeDef`
 
-## ComfyUIの実行方法
+## Other Implementation Guidelines
 
-ComfyUI portableのcustom_nodesフォルダ内にComfyUI-PromptPaletteフォルダを配置している。
-ワーキングディレクトリがComfyUI-PromptPaletteフォルダとすると、以下のコマンドでComfyUIを起動する。
+- Define UI constants in a `CONFIG` object
+
+## Running ComfyUI
+
+The ComfyUI-PromptPalette folder is placed inside the custom_nodes folder of a ComfyUI portable install.
+With the ComfyUI-PromptPalette folder as the working directory, start ComfyUI with:
 
 ```
 ..\..\..\python_embeded\python.exe -u -s ..\..\..\ComfyUI\main.py --windows-standalone-build --disable-auto-launch
 ```
 
-## テスト方法
+## Testing Procedure
 
-1. ComfyUIを再起動
-2. MCP PlaywrightでComfyUIを開く
-3. 画面上部の+ボタンで新しいWorkflowを作成
-4. 画面中央付近をダブルクリックしてノードを検索
-5. "PromptPalette" と入力してEnter
-6. 画面中央にPromptPaletteノードが追加されたことを確認
-7. PromptPaletteノードのEditボタンを押す
-8. PromptPaletteノードのテキストエリアに以下の行を追加
+1. Restart ComfyUI
+2. Open ComfyUI with MCP Playwright
+3. Create a new Workflow with the + button at the top of the screen
+4. Double-click near the center of the screen to search for a node
+5. Type "PromptPalette" and press Enter
+6. Confirm the PromptPalette node was added at the center of the screen
+7. Press the Edit button on the PromptPalette node
+8. Add the following lines to the PromptPalette node's text area
 ```
 aaa
 (bbb:0.9) // BBB
 // (abc:1.2)
 //
 ```
-9. PromptPaletteノードのSaveボタンを押す
-10. hogeの右横の+ボタンを2回押す
-11. hogeの右横の数値が1.2になったことを確認
+9. Press the Save button on the PromptPalette node
+10. Press the + button to the right of "aaa" twice
+11. Confirm the number to the right of "aaa" is now 1.2
 
-## コーディングエージェントのポリシー
+## Coding Agent Policy
 
-- 要求にない変更はせず、指定された箇所のみ最小限の変更に留める
-- 要求に不明な点や曖昧な点があれば確認し、勝手な推測をしない
-- コードを編集する際は、その意図を説明する
-- コマンドを実行する際は、その意図を説明する
+- Do not make changes beyond the request; keep changes minimal and limited to the specified areas
+- If the request is unclear or ambiguous, ask for clarification instead of guessing
+- Explain the intent when editing code
+- Explain the intent when running commands
+- New UI features target the Nodes 1.0 Canvas UI (`canvas_ui.js`) only; leave the DOM UI (`dom_ui.js`) untouched unless explicitly requested
 
-## 参考ページ
+## Reference Pages
 
 - [Comfy Objects - ComfyUI](https://docs.comfy.org/custom-nodes/js/javascript_objects_and_hijacking)
 - [Comfy Hooks - ComfyUI](https://docs.comfy.org/custom-nodes/js/javascript_hooks)
