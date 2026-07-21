@@ -107,6 +107,7 @@ class PromptPaletteDomUI {
   #rowsContainer;
   #emptyMessage;
   #toggleButton;
+  #actionRow;
   #rootWidget;
 
   constructor(node, textWidget, app) {
@@ -121,8 +122,9 @@ class PromptPaletteDomUI {
     this.#rowsContainer = this.#createRowsContainer();
     this.#emptyMessage = this.#createEmptyMessage();
     this.#toggleButton = this.#createToggleButton();
+    this.#actionRow = this.#createActionRow();
     const buttonContainer = this.#createButtonContainer();
-    buttonContainer.append(this.#toggleButton);
+    buttonContainer.append(this.#actionRow, this.#toggleButton);
 
     this.#rootContainer.append(
       this.#rowsContainer,
@@ -231,6 +233,44 @@ class PromptPaletteDomUI {
     return toggleButton;
   }
 
+  #createActionRow() {
+    const actionRow = document.createElement("div");
+    // Hidden until display rows are built for non-empty text.
+    actionRow.style.display = "none";
+    actionRow.style.gap = "4px";
+    actionRow.style.marginBottom = "4px";
+
+    actionRow.append(
+      this.#createActionButton("All", () => this.#setAllChecked(true)),
+      this.#createActionButton("None", () => this.#setAllChecked(false)),
+      this.#createActionButton("Sort", () => this.#sortLines()),
+    );
+    return actionRow;
+  }
+
+  #createActionButton(label, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.style.flex = "1";
+    button.style.border = "0";
+    button.style.borderRadius = "6px";
+    button.style.padding = "3px 4px";
+    button.style.background = COLOR.toggleButtonFillColor;
+    button.style.color = COLOR.toggleButtonTextColor;
+    button.style.fontSize = `${CONFIG.fontSize - 2}px`;
+    button.style.cursor = "pointer";
+
+    button.addEventListener("click", onClick);
+    button.addEventListener("mouseenter", () => {
+      button.style.background = COLOR.toggleButtonFillColorHovered;
+    });
+    button.addEventListener("mouseleave", () => {
+      button.style.background = COLOR.toggleButtonFillColor;
+    });
+    return button;
+  }
+
   #registerRootWidget() {
     const rootWidget = this.#node.addDOMWidget(
       DOM_WIDGET_NAME,
@@ -256,6 +296,7 @@ class PromptPaletteDomUI {
       showWidget(this.#lineBreakWidget);
       this.#rowsContainer.style.display = "none";
       this.#emptyMessage.style.display = "none";
+      this.#actionRow.style.display = "none";
       this.#toggleButton.textContent = "Save";
       this.#app.graph.setDirtyCanvas(true);
     } else {
@@ -319,11 +360,13 @@ class PromptPaletteDomUI {
       // Empty text: show the empty-state message
       this.#rowsContainer.style.display = "none";
       this.#emptyMessage.style.display = "flex";
+      this.#actionRow.style.display = "none";
       return;
     }
     // Non-empty: show rows
     this.#rowsContainer.style.display = "flex";
     this.#emptyMessage.style.display = "none";
+    this.#actionRow.style.display = "flex";
     // Build row elements
     text.split("\n").forEach((line, index) => {
       const row = new PromptPaletteRow(line, index);
@@ -347,6 +390,22 @@ class PromptPaletteDomUI {
     if (this.#mode === PromptPaletteDomUI.MODE.EDIT) return;
     const textLines = new TextLines(this.#textWidget.value);
     textLines.adjustWeightAt(lineIndex, delta);
+    this.#textWidget.value = textLines.toString();
+    this.#buildDisplayRows();
+  }
+
+  #setAllChecked(checked) {
+    if (this.#mode === PromptPaletteDomUI.MODE.EDIT) return;
+    const textLines = new TextLines(this.#textWidget.value);
+    textLines.setAllCommented(!checked);
+    this.#textWidget.value = textLines.toString();
+    this.#buildDisplayRows();
+  }
+
+  #sortLines() {
+    if (this.#mode === PromptPaletteDomUI.MODE.EDIT) return;
+    const textLines = new TextLines(this.#textWidget.value);
+    textLines.sortByPhrase();
     this.#textWidget.value = textLines.toString();
     this.#buildDisplayRows();
   }

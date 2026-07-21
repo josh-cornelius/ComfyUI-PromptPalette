@@ -12,7 +12,7 @@ import {
 import { TextLines } from "./text_lines.js";
 
 const CONFIG = {
-  minNodeHeight: 80,
+  minNodeHeight: 100,
   topNodePadding: 40,
   sideNodePadding: 14,
   lineHeight: 24,
@@ -23,6 +23,10 @@ const CONFIG = {
   weightLabelMarginRight: 2,
   weightButtonSize: 16,
   weightButtonGap: 4,
+  // Action buttons (Check All / Uncheck All / Sort)
+  actionButtonHeight: 18,
+  actionButtonGap: 6,
+  actionButtonFontSize: 11,
   // Scrolling
   bottomPadding: 6,
   fallbackBottomPadding: 46,
@@ -89,6 +93,9 @@ class PromptPaletteCanvasUI {
     TOGGLE_COMMENT: "toggle_comment",
     WEIGHT_PLUS: "weight_plus",
     WEIGHT_MINUS: "weight_minus",
+    CHECK_ALL: "check_all",
+    UNCHECK_ALL: "uncheck_all",
+    SORT: "sort",
   });
 
   #node;
@@ -348,6 +355,15 @@ class PromptPaletteCanvasUI {
       case PromptPaletteCanvasUI.ACTION.WEIGHT_MINUS:
         this.#adjustLineWeight(area.lineIndex, -0.1);
         break;
+      case PromptPaletteCanvasUI.ACTION.CHECK_ALL:
+        this.#setAllChecked(true);
+        break;
+      case PromptPaletteCanvasUI.ACTION.UNCHECK_ALL:
+        this.#setAllChecked(false);
+        break;
+      case PromptPaletteCanvasUI.ACTION.SORT:
+        this.#sortLines();
+        break;
     }
   }
 
@@ -364,6 +380,20 @@ class PromptPaletteCanvasUI {
   #adjustLineWeight(lineIndex, delta) {
     const textLines = new TextLines(this.#textWidget.value);
     textLines.adjustWeightAt(lineIndex, delta);
+    this.#textWidget.value = textLines.toString();
+    this.#app.graph.setDirtyCanvas(true);
+  }
+
+  #setAllChecked(checked) {
+    const textLines = new TextLines(this.#textWidget.value);
+    textLines.setAllCommented(!checked);
+    this.#textWidget.value = textLines.toString();
+    this.#app.graph.setDirtyCanvas(true);
+  }
+
+  #sortLines() {
+    const textLines = new TextLines(this.#textWidget.value);
+    textLines.sortByPhrase();
     this.#textWidget.value = textLines.toString();
     this.#app.graph.setDirtyCanvas(true);
   }
@@ -389,6 +419,7 @@ class PromptPaletteCanvasUI {
     } else {
       this.#maxScrollY = 0;
       this.#scrollbarThumb = null;
+      this.#clickableAreas = [];
       this.#drawEmptyMessage(ctx);
     }
   }
@@ -402,6 +433,10 @@ class PromptPaletteCanvasUI {
 
   #drawCheckboxItems(ctx, lines) {
     this.#clickableAreas = [];
+    // Register action buttons first: rows partially scrolled out of the
+    // viewport keep clickable areas that can overlap the action row, and
+    // click detection picks the first matching area.
+    this.#drawActionButtons(ctx);
 
     const viewportTop = CONFIG.topNodePadding;
     const viewportBottom = this.#getViewportBottom();
@@ -436,13 +471,68 @@ class PromptPaletteCanvasUI {
     this.#drawScrollbar(ctx, viewportTop, viewportHeight, contentHeight);
   }
 
-  #getViewportBottom() {
-    // Prefer the actual Edit button position so the list never overlaps it.
+  #getActionRowY() {
+    // Prefer the actual Edit button position so the row never overlaps it.
     const buttonY = this.#toggleButton?.last_y;
-    if (typeof buttonY === "number" && buttonY > CONFIG.topNodePadding) {
-      return buttonY - CONFIG.bottomPadding;
-    }
-    return this.#node.size[1] - CONFIG.fallbackBottomPadding;
+    const bottom =
+      typeof buttonY === "number" && buttonY > CONFIG.topNodePadding
+        ? buttonY - CONFIG.bottomPadding
+        : this.#node.size[1] - CONFIG.fallbackBottomPadding;
+    return bottom - CONFIG.actionButtonHeight;
+  }
+
+  #getViewportBottom() {
+    return this.#getActionRowY() - CONFIG.bottomPadding;
+  }
+
+  #drawActionButtons(ctx) {
+    const buttons = [
+      { label: "All", action: PromptPaletteCanvasUI.ACTION.CHECK_ALL },
+      { label: "None", action: PromptPaletteCanvasUI.ACTION.UNCHECK_ALL },
+      { label: "Sort", action: PromptPaletteCanvasUI.ACTION.SORT },
+    ];
+    const y = this.#getActionRowY();
+    const availableWidth = this.#node.size[0] - CONFIG.sideNodePadding * 2;
+    const buttonWidth =
+      (availableWidth - CONFIG.actionButtonGap * (buttons.length - 1)) /
+      buttons.length;
+    if (buttonWidth <= 0) return;
+
+    buttons.forEach((button, index) => {
+      const x =
+        CONFIG.sideNodePadding +
+        index * (buttonWidth + CONFIG.actionButtonGap);
+      this.#drawActionButton(ctx, x, y, buttonWidth, button);
+    });
+  }
+
+  #drawActionButton(ctx, x, y, width, button) {
+    const height = CONFIG.actionButtonHeight;
+
+    this.#clickableAreas.push({
+      x: x,
+      y: y,
+      w: width,
+      h: height,
+      lineIndex: -1,
+      action: button.action,
+    });
+
+    const colors = getColors();
+    ctx.fillStyle = colors.weightButtonFillColor;
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, 4);
+    ctx.fill();
+
+    ctx.fillStyle = colors.weightButtonSymbolColor;
+    ctx.font = `${CONFIG.actionButtonFontSize}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillText(
+      button.label,
+      x + width / 2,
+      y + height / 2 + CONFIG.actionButtonFontSize * 0.35,
+    );
+    ctx.textAlign = "left";
   }
 
   #drawScrollbar(ctx, viewportTop, viewportHeight, contentHeight) {

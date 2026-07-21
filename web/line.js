@@ -37,6 +37,10 @@ export class Line {
     this.#commentedOut = !this.#commentedOut;
   }
 
+  get phraseText() {
+    return this.#phraseText;
+  }
+
   get displayText() {
     if (this.#trailingComment) {
       return `${this.#phraseText} ${this.#trailingComment}`;
